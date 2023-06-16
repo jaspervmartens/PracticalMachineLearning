@@ -1,0 +1,71 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Jasper Martens"
+date: "2023-06-16"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This report is about the creation of a machine learning model to predict the way in which exercises were performed using accelerometer data. Six subjects were asked to perform dumbbell lifts in five different ways and data about their movements was collected using accelerometers on the belt, forearm, arm, and dumbbell. For more information about this data, see the following link.
+
+http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har
+
+```{r, message=FALSE}
+library(caret)
+library(rattle)
+library(parallel)
+library(doParallel)
+set.seed(12345)
+```
+
+The training data originally consisted of 160 variables. Many of these contain a large majority of missing values, so these were removed. The first seven columns contain metadata such as time stamps and names of test subjects. These shouldn't be used for prediction, so they were removed as well. This left 53 variables to work with, one of which is the outcome variable, named classe.
+
+```{r}
+training <- read.csv("pml-training.csv")
+training <- training[,colSums(is.na(training))==0]
+training <- training[,colSums(training=="")==0]
+training <- training[,-c(1:7)]
+training$classe <- factor(training$classe)
+dim(training)
+```
+
+Using the caret package, a random forest model was trained to predict the classe variable from all other variables. Because random forest models are time-consuming to train, a five-fold cross-validation was used instead of the more time-consuming bootstrap cross-validation that caret uses by default. Parallel processing was used to further speed up the runtime.
+
+```{r, cache=TRUE}
+cluster <- makeCluster(detectCores() - 1)
+registerDoParallel(cluster)
+fitControl <- trainControl(method = "cv", number = 5, allowParallel = TRUE)
+modFit <- train(classe ~ ., data=training, method="rf", trControl = fitControl)
+stopCluster(cluster)
+registerDoSEQ()
+```
+
+The resulting model achieves 100% accuracy when predicting the training set.
+
+```{r}
+modPred <- predict(modFit, newdata=training)
+print(confusionMatrix(modPred, training$classe))
+```
+
+According to the five-fold cross-validation, the expected out-of-sample error rate is 0.4%.
+
+```{r}
+modFit$finalModel
+```
+
+Performing prediction on the provided test set yields the following results.
+
+```{r}
+testing <- read.csv("pml-testing.csv")
+testing <- testing[,colSums(is.na(testing))==0]
+testing <- testing[,colSums(testing=="")==0]
+testing <- testing[,-c(1:7)]
+predict(modFit, newdata=testing)
+```
